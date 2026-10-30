@@ -1,18 +1,14 @@
 # segmentation-cartes-etat-major: rules for every agent
 
 Deep-learning land-cover segmentation of the 19th-century État-major maps: IGN SCAN
-État-major 40K scans in, BD CARTO EM land-cover classes out. This repo is the clean,
-reusable pipeline. The exploratory work it builds on (campaigns, ablations, label
-studies) is in `../baselines/`; read `../baselines/AGENTS.md` before changing the data,
-the labels or the training recipe.
+État-major 40K scans in, BD CARTO EM land-cover classes out.
 
 ## Working with the user
 
 - **"Could we…?" means answer first.** Say whether it's possible and give a short plan,
   then wait. Read-only checks are fine; don't launch GPU jobs, long runs or big
   refactors until the user says go.
-- The machine is shared with the user's own jobs: 16 cores, 62 GB RAM, one RTX 3070
-  Laptop (8 GB).
+- The machine is shared with the user's own jobs: 16 cores, 62 GB RAM, one 8 GB GPU.
 
 ## Repo layout
 
@@ -25,13 +21,13 @@ top-level folders without asking.
 | `notebooks/` | Exploration only, named `NN-topic.ipynb`. Code that gets reused moves into the package. |
 | `scripts/` | Thin command-line entry points that call the package. No logic of their own. |
 | `tests/` | pytest, mirroring the package. |
-| `data/` | Derived data (`interim/`, `processed/`). Not committed. |
+| `data/` | `raw/` (read-only inputs), `interim/`, `processed/`. Not committed. |
 | `models/` | Checkpoints and run outputs. Not committed. |
 | `reports/` | Committed write-ups and their `figures/`. |
 | `references/` | Documentation and papers. |
 
-- **Raw inputs stay in `../data/`** (see Data below, 26 GB of scans). Read them in place
-  through `config.py`; never copy or modify them, never hard-code absolute paths.
+- Read every path through `config.py`; never hard-code absolute paths.
+- Never modify raw data. Everything derived must be rebuildable by a script.
 - **Never commit** data, checkpoints, caches or run outputs. Only code, configs, small
   reports and figures.
 
@@ -49,56 +45,34 @@ top-level folders without asking.
 
       systemd-run --user --scope -q -p MemoryMax=4G -p MemorySwapMax=0 uv run python ...
 
-  Work tile by tile (e.g. 4096 px tiles with a halo); never load a whole region as float
-  arrays (the Cher alone is 33792 × 25088 px). At most one heavy CPU process per agent
-  and 6 worker processes.
-- **GPU:** never run CUDA outside the shared dispatcher in `../baselines/hypotheses/`. It
-  runs one job at a time and starts every job in `baselines/`, so point uv back here:
-
-      ../baselines/hypotheses/gpu_submit.sh <tag> uv run --directory ../segmentation-cartes-etat-major python -m ...
-      python3 ../baselines/hypotheses/gpu_dispatcher.py status
-
-  Wait for `END     <tag> ` in `../baselines/hypotheses/gpu_queue.log`; logs are in
-  `../baselines/outputs/segformer/hyp/logs/<tag>.log`. Tags are lowercase and unique.
-  Smoke-test every new script first (`<tag>-smoke`). Rules on priorities, time limits and
-  restarts are in `../baselines/AGENTS.md`.
+- Work tile by tile (e.g. 4096 px tiles with a halo). Never load a whole département as
+  float arrays: one is tens of thousands of pixels on each side.
+- At most one heavy CPU process per agent, and at most 6 worker processes.
+- One GPU job at a time. Smoke-test every new script with a short run before a long one.
 
 ## Data
 
-**Decision (2026-10-24):** train only on IGN **level-3** BD CARTO EM labels + SCAN
-État-major 40K scans, in the 16 départements IGN digitized with every class:
-02 03 07 13 15 18 22 29 42 43 48 56 59 62 63 74. No level-4, partner (`PN*`) or old
-Dynafor workshop data unless asked. Details: `../data/README.md`.
+- **Scans:** SCAN État-major 40K, RGB GeoTIFF tiles, 4 m/px, Lambert-93 (EPSG:2154).
+- **Labels:** BD CARTO État-major, **level-3 georeferencing only** (level 4 is warped
+  toward modern maps and doesn't fit the scans). Main layer `ocs_ancien`, class code in
+  `theme` (`EMx.y`). Only use pixels inside `chantier`: the tiles also cover unlabelled
+  areas, sea and foreign land.
+- **Coverage:** the 16 départements IGN digitized with every class:
+  02 03 07 13 15 18 22 29 42 43 48 56 59 62 63 74.
+- Level-3 labels fit the scans to within a few pixels: expect 1–3 px of boundary noise.
+- Labels are inconsistent in places (e.g. some thin rivers are labelled as the meadow or
+  field around them). Check the labels before blaming the model.
 
-- Scans: `../data/scan_em40k/` (378 COG tiles, 4 m/px, Lambert-93, EPSG:2154), mosaic
-  `../data/scan_em40k.vrt`.
-- Labels: `../data/bdcarto_em_n3.gpkg`, layer `ocs_ancien`, class in `theme` (IGN codes
-  `EMx.y`). Only use pixels inside `chantier`: the tiles also cover unlabelled
-  départements, sea and foreign land.
-- Level-3 labels fit the scans to 0–14 m (median 4 m): expect 1–3 px of boundary noise.
-- Known label quirks (thin rivers drawn as meadow/field, `cours_d_eau` flags coded 0/1 or
-  f/t, built-up conventions varying by département) are listed in `../baselines/AGENTS.md`.
-
-**Classes and split (from `../baselines/em40k/`):** 8 classes taken from the first EM
-code: forest, cultures, meadows, pâquis/landes, vineyards, built-up
-(`zone_urbaine` ∪ `batiment`), water, other. Train on 15 départements; val = one interior
-tile per training département; **test = the Cher (18)**. A 2 km guard strip around val
-and test is excluded from training.
+**Classes and split:** 8 classes taken from the first EM code: forest, cultures,
+meadows, pâquis/landes, vineyards, built-up, water, other. Train on 15 départements;
+val = one interior tile per training département; **test = the Cher (18)**. A 2 km guard
+strip around val and test is excluded from training.
 
 ## Evaluation rules
 
-- **Select on val, never on the test.** Report the Cher only for the run chosen on val.
+- **Select on val, never on the test.** Report the test only for the run chosen on val.
 - **Compare paired by seed** (`-s0` against the control's `-s0`). Seed noise is about
   ±0.02 F1; a win must hold at every seed.
-- When the model correctly draws things the labels omit (e.g. double-line rivers), score
-  with a metric that ignores those zones (`macro_f1_x`, `thin_river_f1`, see
-  `../baselines/rivers/scores.py`).
+- When the model correctly draws things the labels omit, score with a metric that
+  ignores those zones, otherwise correct predictions count as errors.
 - Score large regions tile by tile to stay under the RAM cap.
-
-## Starting point
-
-Best model so far (2026-10-30, `../baselines/outputs/em40k/FINAL16K_SUMMARY.md`):
-DINOv3 ViT-B fine-tuned 16k iterations, plus a small full-resolution detail branch and
-`double = t` river lines burned as water (radius 2 px) in the training targets. Cher
-macro F1 ≈ 0.84, thin_river_f1 0.906. Label fixes gave bigger gains than architecture
-changes; image-only post-processing never helped.
