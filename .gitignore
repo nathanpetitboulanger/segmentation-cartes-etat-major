@@ -8,3 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Data, checkpoints and run outputs: never committed
+/data/
+/models/
