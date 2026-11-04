@@ -37,8 +37,11 @@ CLASSES = {  # id: (name, first-level EM codes, display colour)
     8: ("other", (3, 6, 11, 12, 13, 14, 15), "#52514e"),
 }
 
-# Training samples (dataset.py)
-PATCH_SIZE = 512  # px = 2 km at 4 m/px, the block size of the tiles
+# Training samples (dataset.py). An unpadded U-Net (4 poolings, two 3x3 convs per level)
+# returns the central 388 px of a 572 px input, 92 px of context lost per side. Other
+# sizes it accepts: 16k + 124 px in, 16k - 60 px out.
+PATCH_SIZE = 572  # px of scan in, 2.3 km at 4 m/px
+PATCH_OUT_SIZE = 388  # px of prediction out, the stride of the patch grid
 IGNORE_INDEX = 255  # target of unlabelled pixels, skipped by the loss
 
 CRS = "EPSG:2154"  # Lambert-93
