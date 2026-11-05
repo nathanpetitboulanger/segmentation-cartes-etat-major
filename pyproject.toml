@@ -24,4 +24,5 @@ venv = ".venv"
 [dependency-groups]
 dev = [
     "plotly>=7.1.0",
+    "pytest>=9.2.0",
 ]
