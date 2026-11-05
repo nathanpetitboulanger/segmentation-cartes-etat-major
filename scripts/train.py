@@ -15,7 +15,10 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
-        "--epochs", type=int, default=config.EPOCHS, help="passes over the training tiles"
+        "--epochs",
+        type=int,
+        default=config.EPOCHS,
+        help="passes over the training tiles",
     )
     parser.add_argument(
         "--tiles",

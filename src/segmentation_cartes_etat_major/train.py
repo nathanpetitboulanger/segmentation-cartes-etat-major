@@ -1,8 +1,9 @@
 """Train the U-Net (model.py) on PatchDataset (dataset.py) patches.
 
-The label tiles are split into train and val by tile, not by patch: neighbouring patches
-share 2 * margin px of input, so a patch split would show the network val pixels during
-training. The weights of the epoch with the lowest val loss go to config.CHECKPOINT.
+The label tiles are split into train, val and test by tile, not by patch: neighbouring
+patches share 2 * margin px of input, so a patch split would show the network val pixels
+during training. The weights of the epoch with the lowest val loss go to
+config.CHECKPOINT; the test tiles are left to evaluate.py.
 """
 
 import random
@@ -17,14 +18,19 @@ from segmentation_cartes_etat_major.model import UNet
 
 
 def split_tiles(
-    val_fraction: float = config.VAL_FRACTION, seed: int = config.SEED
-) -> tuple[list[str], list[str]]:
-    """(train, val) file names of the label tiles, `val_fraction` of them in val."""
+    val_fraction: float = config.VAL_FRACTION,
+    test_fraction: float = config.TEST_FRACTION,
+    seed: int = config.SEED,
+) -> tuple[list[str], list[str], list[str]]:
+    """(train, val, test) file names of the label tiles."""
     # sorted first: glob order depends on the filesystem, and the split must not
     tiles = sorted(path.name for path in config.LABEL_TILES.glob("*.tif"))
     random.Random(seed).shuffle(tiles)
+    # the held-out tiles come first, val then test: the train tiles are those of the
+    # two-way split this replaced (20% val), so earlier checkpoints never saw the test
     n_val = round(len(tiles) * val_fraction)
-    return tiles[n_val:], tiles[:n_val]
+    n_held = round(len(tiles) * (val_fraction + test_fraction))
+    return tiles[n_held:], tiles[:n_val], tiles[n_val:n_held]
 
 
 def train_one_epoch(
@@ -72,11 +78,11 @@ def evaluate(
     return total / len(loader), correct / counted
 
 
-def train(epochs: int = config.EPOCHS, n_tiles: int | None = None) -> None:
+def train(epochs: int = config.EPOCHS, n_tiles: int | None = None) -> None | str:
     """Train a UNet for `epochs` epochs, keeping the weights of the lowest val loss in
     config.CHECKPOINT. `n_tiles` keeps only the first n tiles of each split, for test runs."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    train_tiles, val_tiles = split_tiles()
+    train_tiles, val_tiles, _ = split_tiles()
     if n_tiles is not None:
         train_tiles, val_tiles = train_tiles[:n_tiles], val_tiles[:n_tiles]
     train_set, val_set = PatchDataset(train_tiles), PatchDataset(val_tiles)
@@ -102,6 +108,7 @@ def train(epochs: int = config.EPOCHS, n_tiles: int | None = None) -> None:
 
     config.CHECKPOINT.parent.mkdir(parents=True, exist_ok=True)
     best = float("inf")
+    number_bad_epoch = 0
     for epoch in range(1, epochs + 1):
         train_loss = train_one_epoch(model, train_loader, loss_fn, optimizer, device)
         val_loss, val_acc = evaluate(model, val_loader, loss_fn, device)
@@ -113,4 +120,8 @@ def train(epochs: int = config.EPOCHS, n_tiles: int | None = None) -> None:
             best = val_loss
             torch.save(model.state_dict(), config.CHECKPOINT)
             line += "  saved"
+        else:
+            number_bad_epoch += 1
+            if number_bad_epoch >= config.PATIENCE:
+                break
         print(line)
