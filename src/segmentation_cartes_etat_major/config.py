@@ -44,6 +44,15 @@ PATCH_SIZE = 572  # px of scan in, 2.3 km at 4 m/px
 PATCH_OUT_SIZE = 388  # px of prediction out, the stride of the patch grid
 IGNORE_INDEX = 255  # target of unlabelled pixels, skipped by the loss
 
+# Training (train.py)
+BATCH_SIZE = 8  # patches per step, 4.3 GB of an 8 GB GPU with bf16 autocast
+LEARNING_RATE = 1e-4  # Adam
+EPOCHS = 10
+VAL_FRACTION = 0.2  # share of the label tiles held out for validation
+SEED = 42  # of the train/val split, so every run gets the same tiles
+CHECKPOINT = MODELS / "unet.pt"  # weights of the epoch with the lowest val loss
+NUM_WORKERS = 8  # DataLoader processes reading patches; the GPU needs >= 3 to never wait
+
 CRS = "EPSG:2154"  # Lambert-93
 DEPARTEMENTS = tuple("02 03 07 13 15 18 22 29 42 43 48 56 59 62 63 74".split())
 
