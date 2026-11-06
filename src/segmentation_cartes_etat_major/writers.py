@@ -57,10 +57,14 @@ def write_geoparquet(gdf: gpd.GeoDataFrame, dst: Path) -> None:
     part.rename(dst)
 
 
-def write_vrt(tifs: list[Path], dst: Path) -> None:
+def write_vrt(
+    tifs: list[Path], dst: Path, colours: bool = True, alpha: bool = False
+) -> None:
     """A mosaic of `tifs` (same resolution, CRS, bands and type), paths relative to the VRT.
 
-    The nodata value and colour table of the first tile are carried over.
+    The nodata value and colour table of the first tile are carried over; `colours=False`
+    drops the colour table, so readers see the raw values. `alpha=True` adds an alpha band,
+    255 over the tiles and 0 between them, for sources without nodata.
     """
     with rasterio.open(tifs[0]) as d:
         res, crs, count = d.res, d.crs, d.count
@@ -72,9 +76,8 @@ def write_vrt(tifs: list[Path], dst: Path) -> None:
             assert (d.res, d.crs, d.count, d.dtypes[0]) == (res, crs, count, dtype), (
                 f"{p.name} differs from {tifs[0].name}"
             )
-            tiles.append(
-                (p.relative_to(dst.parent).as_posix(), d.bounds, d.width, d.height)
-            )
+            name = p.relative_to(dst.parent, walk_up=True).as_posix()
+            tiles.append((name, d.bounds, d.width, d.height))
     left = min(b.left for _, b, _, _ in tiles)
     top = max(b.top for _, b, _, _ in tiles)
     width = round((max(b.right for _, b, _, _ in tiles) - left) / res[0])
@@ -89,27 +92,47 @@ def write_vrt(tifs: list[Path], dst: Path) -> None:
         lines.append(f'  <VRTRasterBand dataType="{GDAL_TYPES[dtype]}" band="{band}">')
         if nodata is not None:
             lines.append(f"    <NoDataValue>{nodata:g}</NoDataValue>")
-        lines.append(f"    <ColorInterp>{ci.name.capitalize()}</ColorInterp>")
-        if cmap:
+        interp = ci.name.capitalize() if colours or not cmap else "Gray"
+        lines.append(f"    <ColorInterp>{interp}</ColorInterp>")
+        if cmap and colours:
             lines.append("    <ColorTable>")
             lines += [
                 f'      <Entry c1="{r}" c2="{g}" c3="{b}" c4="{a}"/>'
                 for r, g, b, a in (cmap[i] for i in range(max(cmap) + 1))
             ]
             lines.append("    </ColorTable>")
-        for name, b, w, h in tiles:
-            x, y = round((b.left - left) / res[0]), round((top - b.top) / res[1])
-            lines += [
-                "    <SimpleSource>",
-                f'      <SourceFilename relativeToVRT="1">{name}</SourceFilename>',
-                f"      <SourceBand>{band}</SourceBand>",
-                f'      <SrcRect xOff="0" yOff="0" xSize="{w}" ySize="{h}"/>',
-                f'      <DstRect xOff="{x}" yOff="{y}" xSize="{w}" ySize="{h}"/>',
-                "    </SimpleSource>",
-            ]
+        lines += _sources(tiles, band, left, top, res)
+        lines.append("  </VRTRasterBand>")
+    if alpha:
+        lines.append(f'  <VRTRasterBand dataType="Byte" band="{count + 1}">')
+        lines.append("    <ColorInterp>Alpha</ColorInterp>")
+        lines += _sources(tiles, 1, left, top, res, value=255)
         lines.append("  </VRTRasterBand>")
     lines.append("</VRTDataset>")
     dst.write_text("\n".join(lines) + "\n")
+
+
+def _sources(tiles, band, left, top, res, value: int | None = None) -> list[str]:
+    """The VRT sources of `band`, one per tile; with `value`, every pixel of a tile reads
+    as `value` (an alpha band)."""
+    kind = "SimpleSource" if value is None else "ComplexSource"
+    lines = []
+    for name, b, w, h in tiles:
+        x, y = round((b.left - left) / res[0]), round((top - b.top) / res[1])
+        lines += [
+            f"    <{kind}>",
+            f'      <SourceFilename relativeToVRT="1">{name}</SourceFilename>',
+            f"      <SourceBand>{band}</SourceBand>",
+            f'      <SrcRect xOff="0" yOff="0" xSize="{w}" ySize="{h}"/>',
+            f'      <DstRect xOff="{x}" yOff="{y}" xSize="{w}" ySize="{h}"/>',
+        ]
+        if value is not None:
+            lines += [
+                f"      <ScaleOffset>{value}</ScaleOffset>",
+                "      <ScaleRatio>0</ScaleRatio>",
+            ]
+        lines.append(f"    </{kind}>")
+    return lines
 
 
 def _colormap(d, band: int) -> dict | None:

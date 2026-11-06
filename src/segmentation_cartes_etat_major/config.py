@@ -23,6 +23,16 @@ LABEL_TILES = INTERIM / "labels"  # one class raster per scan tile: same name, s
 LABEL_TILES_VRT = INTERIM / "labels.vrt"  # mosaic of LABEL_TILES
 CLASS_TABLE = INTERIM / "classes.csv"  # pixels and area per class
 
+# data/processed/, built by scripts/build_processed.py for the dashboards
+LABEL_IDS_VRT = PROCESSED / "labels_ids.vrt"  # LABEL_TILES_VRT without its colour table
+SCANS_ALPHA_VRT = PROCESSED / "scan_em40k_alpha.vrt"  # SCANS_VRT, transparent off tiles
+WEB = PROCESSED / "web"  # what the dashboards serve, as is
+WEB_TILES = WEB / "tiles"  # <layer>/{z}/{x}/{y}.<ext>: XYZ tiles in Web Mercator
+TILE_STATS = WEB / "tile_stats.geojson"  # km² per class of every scan tile, WGS84
+WEB_MANIFEST = WEB / "manifest.json"  # classes, tile layers and files of WEB
+# z15 is 3.0-3.5 m/px over France, the closest to the 4 m of the scans; z5 shows it all
+WEB_MIN_ZOOM, WEB_MAX_ZOOM = 5, 15
+
 # Land-cover classes rasterized from `ocs_ancien`, keyed by the first EM code of `theme`
 # (a mixed code such as EM7.1EM6.2 takes its first part, EM7). 0 = no label.
 # Meanings are inferred, except EM1 (it matches the zone_urbaine and batiment layers).

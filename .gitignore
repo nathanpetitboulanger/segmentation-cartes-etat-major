@@ -12,3 +12,7 @@ wheels/
 # Data, checkpoints and run outputs: never committed
 /data/
 /models/
+
+# Dashboards: dependencies and builds
+node_modules/
+*.tsbuildinfo
