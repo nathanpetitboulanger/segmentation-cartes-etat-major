@@ -5,7 +5,7 @@ Deep-learning land-cover segmentation of the 19th-century État-major maps: IGN 
 
 ## The pipeline in 5 minutes
 
-[![Video: from label rasters to predictions, with every technical choice](reports/video/pipeline_poster.jpg)](reports/video/pipeline.mp4)
+https://github.com/user-attachments/assets/5bcfd1b2-7201-4185-b3d6-6533bbc62d60
 
 From the label rasters to the final predictions, on real data and real model outputs.
 On the 38 held-out test tiles: pixel accuracy 91.7 %, mIoU 0.672, mean F1 0.769.
