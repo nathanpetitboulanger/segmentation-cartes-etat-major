@@ -1,12 +1,45 @@
-"""Writers for the files the build steps produce, shared by build_raw and build_interim."""
+"""Writers for the files the build steps produce, shared by build_raw, build_interim and
+predict."""
 
 from pathlib import Path
 
 import geopandas as gpd
+import numpy as np
 import rasterio
+import rasterio.shutil
+from rasterio.io import MemoryFile
+
+from segmentation_cartes_etat_major import config
 
 GDAL_TYPES = {"uint8": "Byte", "uint16": "UInt16"}
 ROW_GROUP = 50_000
+CLASS_COG = {
+    "COMPRESS": "DEFLATE",
+    "BLOCKSIZE": 512,
+    "OVERVIEWS": "AUTO",
+    "RESAMPLING": "MODE",
+}
+CLASS_COLORMAP = {0: (0, 0, 0, 0)} | {
+    cid: (*bytes.fromhex(colour[1:]), 255)
+    for cid, (_, _, colour) in config.CLASSES.items()
+}
+
+
+def write_class_cog(classes: np.ndarray, profile: dict, dst: Path) -> None:
+    """A uint8 class raster (config.CLASSES ids, 0 = no class) as a COG with the class
+    colours, on the grid of `profile` (width, height, crs, transform). Written to `.part`
+    then renamed."""
+    part = dst.with_name(dst.name + ".part")
+    with MemoryFile() as mem:
+        with mem.open(
+            driver="GTiff", count=1, dtype="uint8", nodata=0, **profile
+        ) as tmp:
+            tmp.write(classes, 1)
+            tmp.write_colormap(1, CLASS_COLORMAP)
+            tmp.set_band_description(1, "class")
+        with mem.open() as tmp:
+            rasterio.shutil.copy(tmp, part, driver="COG", **CLASS_COG)
+    part.rename(dst)
 
 
 def write_geoparquet(gdf: gpd.GeoDataFrame, dst: Path) -> None:

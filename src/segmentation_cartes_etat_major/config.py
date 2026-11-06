@@ -55,6 +55,15 @@ CHECKPOINT = MODELS / "unet.pt"  # weights of the epoch with the lowest val loss
 NUM_WORKERS = 8  # DataLoader processes reading patches; the GPU needs >= 3
 PATIENCE = 3
 
+# Outputs of the trained U-Net, next to CHECKPOINT
+SCORES = MODELS / "unet_scores.json"  # evaluate.py: scores of CHECKPOINT, test tiles
+PREDICTIONS = MODELS / "predictions"  # predict.py: one class raster per scan tile
+PREDICTIONS_VRT = MODELS / "predictions.vrt"  # mosaic of PREDICTIONS
+
+# reports/figures/, made by the plot scripts
+FIGURES = REPORTS / "figures"
+PREDICTION_FIGURES = FIGURES / "predictions"  # plots.py: one PNG per predicted tile
+
 CRS = "EPSG:2154"  # Lambert-93
 DEPARTEMENTS = tuple("02 03 07 13 15 18 22 29 42 43 48 56 59 62 63 74".split())
 

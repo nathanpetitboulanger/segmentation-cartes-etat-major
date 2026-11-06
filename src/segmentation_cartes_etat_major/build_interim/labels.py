@@ -21,25 +21,13 @@ import numpy as np
 import pandas as pd
 import rasterio
 import rasterio.features
-import rasterio.shutil
-from rasterio.io import MemoryFile
 
 from segmentation_cartes_etat_major import config
-from segmentation_cartes_etat_major.writers import write_vrt
+from segmentation_cartes_etat_major.writers import write_class_cog, write_vrt
 
-COG = {
-    "COMPRESS": "DEFLATE",
-    "BLOCKSIZE": 512,
-    "OVERVIEWS": "AUTO",
-    "RESAMPLING": "MODE",
-}
 N_CLASSES = len(config.CLASSES)
 CLASS_OF_LEVEL1 = {
     level1: cid for cid, (_, levels, _) in config.CLASSES.items() for level1 in levels
-}
-COLORMAP = {0: (0, 0, 0, 0)} | {
-    cid: (*bytes.fromhex(colour[1:]), 255)
-    for cid, (_, _, colour) in config.CLASSES.items()
 }
 
 
@@ -88,24 +76,10 @@ def _label_tile(scan: Path) -> tuple[str, np.ndarray]:
                 out=labels,
                 transform=profile["transform"],
             )
-        _write_cog(labels, profile, dst)
+        write_class_cog(labels, profile, dst)
     with rasterio.open(dst) as d:
         counts = np.bincount(d.read(1).ravel(), minlength=N_CLASSES + 1)
     return scan.name, counts
-
-
-def _write_cog(labels: np.ndarray, profile: dict, dst: Path) -> None:
-    part = dst.with_name(dst.name + ".part")
-    with MemoryFile() as mem:
-        with mem.open(
-            driver="GTiff", count=1, dtype="uint8", nodata=0, **profile
-        ) as tmp:
-            tmp.write(labels, 1)
-            tmp.write_colormap(1, COLORMAP)
-            tmp.set_band_description(1, "class")
-        with mem.open() as tmp:
-            rasterio.shutil.copy(tmp, part, driver="COG", **COG)
-    part.rename(dst)
 
 
 def _write_class_table(pixels: np.ndarray, pixel_km2: float) -> None:

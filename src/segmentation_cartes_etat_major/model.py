@@ -21,6 +21,8 @@ nn.CrossEntropyLoss(ignore_index=config.IGNORE_INDEX).
 # scripts failed on it), and so is the Colab header. Nothing runs at import any more: the
 # model built and run on torch.rand at the bottom of each script is now tests/test_model.py.
 
+from pathlib import Path
+
 import torch
 from torch import nn
 
@@ -96,3 +98,10 @@ class UNet(nn.Module):
             # 572 px input only; crop them to the upsampled map instead (a no-op if padded)
             x = block(torch.cat([x, centre_crop(skip, *x.shape[-2:])], dim=1))
         return self.head(x)
+
+
+def load_unet(device: torch.device, checkpoint: Path = config.CHECKPOINT) -> UNet:
+    """The unpadded UNet with the weights train.py saved, on `device`, in eval mode."""
+    model = UNet()
+    model.load_state_dict(torch.load(checkpoint, map_location=device))
+    return model.to(device).eval()

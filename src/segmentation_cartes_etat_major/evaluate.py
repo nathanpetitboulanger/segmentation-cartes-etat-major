@@ -1,15 +1,23 @@
-"""Score the trained U-Net (config.CHECKPOINT) on the test tiles: IoU per class and mIoU.
+"""Score the trained U-Net (config.CHECKPOINT) on the test tiles: IoU and F1 per class.
 
 Training never sees the test tiles, not even to pick its best epoch (the val tiles do
 that), so these are the scores to report.
+
+The scores are printed and written to config.SCORES (JSON): the tiles scored, the means,
+each class's pixels, IoU and F1 (null for a class absent from the tiles), and the
+confusion matrix in pixels, rows = true class, columns = predicted, in config.CLASSES
+order.
 """
+
+import json
+import math
 
 import torch
 from torch.utils.data import DataLoader
 
 from segmentation_cartes_etat_major import config, metrics
 from segmentation_cartes_etat_major.dataset import PatchDataset
-from segmentation_cartes_etat_major.model import UNet
+from segmentation_cartes_etat_major.model import UNet, load_unet
 from segmentation_cartes_etat_major.train import split_tiles
 
 
@@ -36,23 +44,44 @@ def confusion_on_tiles(
 
 def evaluate(n_tiles: int | None = None) -> None:
     """Print the IoU and F1 of each class, their means and the pixel accuracy on the test
-    tiles, or on the first `n_tiles` of them only, for a quick run."""
+    tiles, or on the first `n_tiles` of them only, for a quick run, and write them to
+    config.SCORES."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     _, _, tiles = split_tiles()
     if n_tiles is not None:
         tiles = tiles[:n_tiles]
-    model = UNet().to(device)
-    model.load_state_dict(torch.load(config.CHECKPOINT, map_location=device))
-    cm = confusion_on_tiles(model, tiles, device)
+    cm = confusion_on_tiles(load_unet(device), tiles, device)
 
     ious, f1s = metrics.iou(cm), metrics.f1(cm)
+    names = [name for name, _, _ in config.CLASSES.values()]
+    pixels = cm.sum(dim=1)
+    accuracy = cm.diag().sum() / cm.sum()
     print(f"{len(tiles)} test tiles, weights from {config.CHECKPOINT.name}\n")
     print(f"{'class':<15}{'pixels':>13}{'IoU':>8}{'F1':>8}")
-    names = [name for name, _, _ in config.CLASSES.values()]
-    for name, pixels, iou, f1 in zip(names, cm.sum(dim=1), ious, f1s):
-        print(f"{name:<15}{pixels:>13,}{iou:>8.3f}{f1:>8.3f}")
-    accuracy = cm.diag().sum() / cm.sum()
+    for name, n, iou, f1 in zip(names, pixels, ious, f1s):
+        print(f"{name:<15}{n:>13,}{iou:>8.3f}{f1:>8.3f}")
     print(
         f"\nmIoU {torch.nanmean(ious):.3f}   mean F1 {torch.nanmean(f1s):.3f}   "
         f"pixel accuracy {accuracy:.3f}"
     )
+
+    scores = {
+        "checkpoint": config.CHECKPOINT.name,
+        "tiles": tiles,
+        "miou": _number(torch.nanmean(ious)),
+        "mean_f1": _number(torch.nanmean(f1s)),
+        "pixel_accuracy": _number(accuracy),
+        "classes": {
+            name: {"pixels": int(n), "iou": _number(iou), "f1": _number(f1)}
+            for name, n, iou, f1 in zip(names, pixels, ious, f1s)
+        },
+        "confusion_matrix": cm.tolist(),
+    }
+    config.SCORES.write_text(json.dumps(scores, indent=2) + "\n")
+    print(f"written to {config.SCORES.relative_to(config.ROOT)}")
+
+
+def _number(x: torch.Tensor) -> float | None:
+    """A score for JSON, which has no nan: None for a class absent from the tiles."""
+    value = float(x)
+    return None if math.isnan(value) else round(value, 4)
