@@ -63,6 +63,7 @@ PREDICTIONS_VRT = MODELS / "predictions.vrt"  # mosaic of PREDICTIONS
 # reports/figures/, made by the plot scripts
 FIGURES = REPORTS / "figures"
 PREDICTION_FIGURES = FIGURES / "predictions"  # plots.py: one PNG per predicted tile
+CONFUSION_FIGURE = FIGURES / "confusion_matrix.png"  # plots.py: from SCORES
 
 CRS = "EPSG:2154"  # Lambert-93
 DEPARTEMENTS = tuple("02 03 07 13 15 18 22 29 42 43 48 56 59 62 63 74".split())
